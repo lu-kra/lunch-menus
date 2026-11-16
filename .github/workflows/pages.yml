@@ -20,13 +20,19 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/configure-pages@v6
-      - name: Scrape menus
+      - id: pages
+        uses: actions/configure-pages@v6
+      - name: Scrape menus (+ AI fitness tips)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # AI results of the previous deployment, so each dish/image is sent to the model only once
+          AI_CACHE_URL: ${{ steps.pages.outputs.base_url }}/ai.json
         run: python3 server.py --build _site
       - uses: actions/upload-pages-artifact@v5
         with:

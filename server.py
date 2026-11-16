@@ -20,9 +20,12 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import ai
+
 PORT = int(os.environ.get("PORT", "8066"))
 CACHE_TTL = 20 * 60
 ROOT = os.path.dirname(os.path.abspath(__file__))
+AI_CACHE_FILE = os.path.join(ROOT, ".ai-cache.json")
 # Some of the sites block non-browser user agents (HTTP 466).
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -203,6 +206,14 @@ _img_cache = {}
 _lock = threading.Lock()
 
 
+def fetch_image(url):
+    if url not in _img_cache:
+        if len(_img_cache) > 50:
+            _img_cache.clear()
+        _img_cache[url] = fetch(url, binary=True)
+    return _img_cache[url]
+
+
 def scrape_one(r):
     out = {"id": r["id"], "name": r["name"], "url": r["url"], "days": {},
            "weekImages": [], "period": "", "error": None}
@@ -221,7 +232,15 @@ def get_menus(force=False):
             results = list(ex.map(scrape_one, RESTAURANTS))
         data = {"fetchedAt": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
                 "restaurants": results}
-        _cache.update(time=time.time(), data=data)
+        # AI fitness hints: cached results always, new model calls only with GEMINI_API_KEY.
+        cache = ai.load_cache(AI_CACHE_FILE, os.environ.get("AI_CACHE_URL"))
+        if cache or os.environ.get("GEMINI_API_KEY"):
+            try:
+                ai.enrich(data, fetch_image, cache)
+                ai.save_cache(cache, AI_CACHE_FILE)
+            except Exception as e:  # the hints are optional, the menus must still work
+                print(f"AI failed: {type(e).__name__}: {e}", file=sys.stderr)
+        _cache.update(time=time.time(), data=data, ai=cache)
         return data
 
 
@@ -250,7 +269,7 @@ def build(out):
         if kind == "full":  # zoom links point to the original, avoids storing ~5 MB files
             return url
         try:
-            body, ctype = fetch(url, binary=True)
+            body, ctype = fetch_image(url)
         except Exception as e:
             print(f"image failed {url}: {e}", file=sys.stderr)
             return url
@@ -265,10 +284,17 @@ def build(out):
     data["static"] = True
     with open(os.path.join(out, "menus.json"), "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
+    if _cache.get("ai"):  # published so the next build can reuse it (AI_CACHE_URL)
+        ai.save_cache(_cache["ai"], os.path.join(out, "ai.json"))
     shutil.copy(os.path.join(ROOT, "index.html"), os.path.join(out, "index.html"))
     for r in data["restaurants"]:
         print(f"{r['name']}: {len(r['days'])} days, {len(r['weekImages'])} images"
+              + (" (read by AI)" if r.get("aiExtracted") else "")
               + (f" ERROR {r['error']}" if r["error"] else ""))
+    if data.get("ai"):
+        st = data["ai"]
+        print(f"AI: {st['calls']} calls ({', '.join(st['models']) or '-'}), {st['cached']} cached"
+              + "".join(f"\n  AI error: {e}" for e in st["errors"]))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -296,11 +322,7 @@ class Handler(BaseHTTPRequestHandler):
             if urllib.parse.urlparse(src).hostname not in IMAGE_HOSTS:
                 return self.send(403, b"forbidden", "text/plain")
             try:
-                if src not in _img_cache:
-                    if len(_img_cache) > 50:
-                        _img_cache.clear()
-                    _img_cache[src] = fetch(src, binary=True)
-                body, ctype = _img_cache[src]
+                body, ctype = fetch_image(src)
                 self.send(200, body, ctype, {"Cache-Control": "max-age=1800"})
             except Exception as e:
                 self.send(502, str(e).encode(), "text/plain")

@@ -29,10 +29,10 @@
   .err { background:#ffe3e3; color:#c92a2a; }
   .empty { color:var(--muted); }
   ul { list-style:none; margin:0; padding:4px 0; }
-  li { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; padding:8px 16px; border-bottom:1px solid #f6f6f6; cursor:pointer; }
+  li { display:grid; grid-template-columns:84px 1fr auto; gap:4px 10px; padding:8px 16px; border-bottom:1px solid #f6f6f6; cursor:pointer; }
   li:hover { background:#fafafa; }
   li.picked { background:#fff4e6; }
-  li .cat { font-size:11px; color:var(--muted); text-transform:uppercase; white-space:nowrap; padding-top:3px; min-width:62px; }
+  li .cat { font-size:11px; color:var(--muted); text-transform:uppercase; padding-top:3px; overflow-wrap:anywhere; }
   li .name { font-size:14px; line-height:1.35; }
   li .sub { display:block; font-size:12px; color:var(--muted); margin-top:2px; }
   li .price { font-weight:600; white-space:nowrap; font-size:14px; }
@@ -43,6 +43,23 @@
   .imgs img { width:100%; border-radius:8px; display:block; cursor:zoom-in; }
   .imgs .hint { font-size:12px; color:var(--muted); margin:4px 2px 8px; }
   #loading { padding:40px; text-align:center; color:var(--muted); grid-column:1/-1; }
+  #ai { margin:12px 20px 0; padding:10px 14px 8px; background:#fff; border:1px solid #b2f2bb; border-radius:12px; display:none; }
+  #ai h3 { margin:0 0 4px; font-size:15px; }
+  #ai .row { display:grid; grid-template-columns:24px 1fr auto; gap:0 8px; align-items:start; padding:7px 4px; border-top:1px solid #f1f3f5; cursor:pointer; font-size:14px; }
+  #ai .row:hover { background:#f8f9fa; }
+  #ai .row.picked { background:#fff4e6; }
+  #ai .why { display:block; font-size:12px; color:#555; margin-top:1px; }
+  #ai .disc { font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4; }
+  .macros { display:block; font-size:12px; color:#2b8a3e; margin-top:2px; font-style:normal; }
+  .score { display:inline-block; min-width:24px; padding:1px 6px; border-radius:10px; background:#adb5bd; color:#fff; font-size:11px; font-weight:600; text-align:center; }
+  .score.hi { background:#2f9e44; }
+  .score.mid { background:#f59f00; }
+  li.best { background:#ebfbee; box-shadow:inset 3px 0 0 #2f9e44; opacity:1; }
+  li.best.picked { background:#fff4e6; }
+  .badge { font-size:11px; font-weight:600; color:#2b8a3e; white-space:nowrap; margin-left:6px; font-style:normal; }
+  .ai-note { margin:10px 16px 0; font-size:12px; color:var(--muted); }
+  details.orig summary { cursor:pointer; font-size:13px; color:var(--muted); padding:8px 16px; }
+  details.orig .imgs { padding-top:0; }
   @media (max-width:600px) { main { grid-template-columns:1fr; padding:10px; } header { padding:10px; } }
 </style>
 </head>
@@ -56,6 +73,7 @@
   <button id="refresh" title="Znovu načítať z webov">⟳ Obnoviť</button>
 </header>
 <div id="pick"></div>
+<div id="ai"></div>
 <main id="list"><div id="loading">Načítavam menu…</div></main>
 
 <script>
@@ -92,6 +110,49 @@ function imgBlock(imgs, hint) {
     `<a href="${esc(im.full)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(im.src)}" alt="menu"></a>`).join("")}</div>`;
 }
 
+// ---- AI fitness tip: it.ai = {kcal, protein, carbs, fat, fiber, fried, sweet, note} estimated by Gemini
+const isSoup = it => /^poliev/i.test(it.category);
+const clamp01 = x => Math.max(0, Math.min(1, x));
+// 0–100: plenty of protein (and protein share), 450–850 kcal, fat ≤ 30 % of energy, fibre; fried/sweet penalised.
+function fitScore(a) {
+  const k = a.kcal, pE = a.protein * 4 / k, fE = a.fat * 9 / k;
+  const kcal = k < 450 ? clamp01((k - 250) / 200) : k <= 850 ? 1 : clamp01((1250 - k) / 400);
+  const s = 35 * clamp01(a.protein / 45) + 20 * clamp01((pE - 0.12) / 0.2) + 20 * kcal
+    + 15 * clamp01((0.5 - fE) / 0.2) + 10 * clamp01((a.fiber || 0) / 8)
+    - (a.fried ? 15 : 0) - (a.sweet ? 20 : 0);
+  return Math.round(Math.max(0, Math.min(100, s)));
+}
+function bestOf(items) {
+  let best = null;
+  for (const it of items || []) {
+    if (!it.ai || isSoup(it)) continue;
+    const s = fitScore(it.ai);
+    if (!best || s > best.s) best = {it, s};
+  }
+  return best;
+}
+const macros = a => `≈ ${a.kcal} kcal · B ${a.protein} g · S ${a.carbs} g · T ${a.fat} g`;
+const scoreTag = s => `<span class="score ${s >= 70 ? "hi" : s >= 50 ? "mid" : ""}" title="Fitness skóre 0–100">${s}</span>`;
+const pickId = (r, it) => r.id + "|" + it.category + "|" + it.name;
+const pickAttr = (r, it) => esc(JSON.stringify({id: pickId(r, it), name: it.name, price: it.price, restaurant: r.name}));
+
+function renderAi(best, pick) {
+  const ranked = data.restaurants.filter(r => best.get(r.id)).sort((a, b) => best.get(b.id).s - best.get(a.id).s);
+  $("#ai").style.display = ranked.length ? "block" : "none";
+  if (!ranked.length) return;
+  $("#ai").innerHTML = `<h3>💪 AI tip pre fitness – ${DAY_NAMES[day].toLowerCase()}</h3>` + ranked.map((r, i) => {
+    const {it, s} = best.get(r.id), a = it.ai, date = r.days[day].date;
+    const stale = date && date !== dateOfWeekday(day) ? ` <small>(⚠ menu z ${esc(date)})</small>` : "";
+    return `<div class="row${pick?.id === pickId(r, it) ? " picked" : ""}" data-pick="${pickAttr(r, it)}" title="Klikni pre výber">
+      <span>${i ? "💪" : "🏆"}</span>
+      <span><b>${esc(r.name)}:</b> ${esc(it.name)}${it.price ? " · " + esc(it.price) : ""}${stale}
+        <span class="macros">${macros(a)}</span>${a.note ? `<span class="why">${esc(a.note)}</span>` : ""}</span>
+      ${scoreTag(s)}</div>`;
+  }).join("") + `<div class="disc">Hodnoty odhaduje AI (Google Gemini) z názvu jedla a gramáže – sú len orientačné.
+    Skóre 0–100 zvýhodňuje veľa bielkovín, 450–850 kcal, menej tukov a vlákninu; vyprážané a sladké jedlá penalizuje, polievky nehodnotí.
+    B = bielkoviny, S = sacharidy, T = tuky.</div>`;
+}
+
 function render() {
   if (!data) return;
   renderTabs();
@@ -99,6 +160,8 @@ function render() {
   const pick = JSON.parse(localStorage.getItem(pickKey()) || "null");
   $("#pick").style.display = pick ? "block" : "none";
   if (pick) $("#pick").innerHTML = `⭐ Tvoj výber na ${DAY_NAMES[day].toLowerCase()}: <b>${esc(pick.name)}</b> — ${esc(pick.restaurant)} ${pick.price ? "· " + esc(pick.price) : ""}`;
+  const best = new Map(data.restaurants.map(r => [r.id, bestOf(r.days[day]?.items)]));
+  renderAi(best, pick);
 
   $("#list").innerHTML = data.restaurants.map(r => {
     const d = r.days[day];
@@ -106,24 +169,30 @@ function render() {
     let body = "";
     if (r.error) body += `<div class="err">Nepodarilo sa načítať: ${esc(r.error)}</div>`;
     if (d && d.date && d.date !== expected) body += `<div class="warn">⚠ Menu je pre ${esc(d.date)} (nie ${expected}) – reštaurácia ho asi ešte neaktualizovala.</div>`;
+    const aiRead = r.aiExtracted && d?.items?.length;  // dishes read by AI from the image -> original collapsed
+    if (aiRead) body += `<div class="ai-note">🤖 Menu prečítala AI z obrázka – v prípade pochybností over v origináli nižšie.</div>`;
     let items = d?.items || [];
     if (q) items = items.filter(it => norm(it.name + " " + it.note).includes(q));
     if (items.length) {
       body += `<ul>${items.map(it => {
-        const id = r.id + "|" + it.category + "|" + it.name;
-        const cls = [it.category === "Polievka" ? "soup" : "", it.category.startsWith("Stála") ? "perm" : "", pick?.id === id ? "picked" : ""].join(" ");
+        const a = it.ai, top = best.get(r.id)?.it === it;
+        const cls = [isSoup(it) ? "soup" : "", it.category.startsWith("Stála") ? "perm" : "", top ? "best" : "", pick?.id === pickId(r, it) ? "picked" : ""].join(" ");
         const sub = [it.note, it.allergens ? "alergény: " + it.allergens : ""].filter(Boolean).join(" · ");
-        return `<li class="${cls}" data-pick='${esc(JSON.stringify({id, name: it.name, price: it.price, restaurant: r.name}))}' title="Klikni pre výber">
+        const nutr = a ? `<span class="macros" title="${esc(a.note)}">${macros(a)}${isSoup(it) ? "" : " " + scoreTag(fitScore(a))}</span>` : "";
+        return `<li class="${cls}" data-pick="${pickAttr(r, it)}" title="Klikni pre výber">
           <span class="cat">${esc(it.category.replace("Stála ponuka · ", "★ "))}</span>
-          <span class="name">${highlight(it.name, q)}${sub ? `<span class="sub">${highlight(sub, q)}</span>` : ""}</span>
+          <span class="name">${highlight(it.name, q)}${top ? `<span class="badge">💪 AI tip</span>` : ""}${sub ? `<span class="sub">${highlight(sub, q)}</span>` : ""}${nutr}</span>
           <span class="price">${esc(it.price)}</span></li>`;
       }).join("")}</ul>`;
     } else if (d?.items?.length && q) {
       body += `<div class="empty">Nič nezodpovedá „${esc($("#q").value)}“.</div>`;
     }
+    const imageShown = d?.images?.length || (r.weekImages?.length && !aiRead);
+    if (!r.error && !d?.items?.length && !imageShown) body += `<div class="empty">Na tento deň nie je zverejnené menu.</div>`;
     if (d?.images?.length) body += imgBlock(d.images, "Menu je zverejnené ako obrázok – klikni pre zväčšenie.");
-    if (r.weekImages?.length) body += imgBlock(r.weekImages, "Týždenné menu (obrázok) – klikni pre zväčšenie.");
-    if (!body && !r.error) body = `<div class="empty">Na tento deň nie je zverejnené menu.</div>`;
+    if (r.weekImages?.length) body += aiRead
+      ? `<details class="orig"><summary>🖼️ Originálne menu (obrázok)</summary>${imgBlock(r.weekImages, "")}</details>`
+      : imgBlock(r.weekImages, "Týždenné menu (obrázok) – klikni pre zväčšenie.");
     return `<section class="card"><h2><a href="${esc(r.url)}" target="_blank">${esc(r.name)} ↗</a><small>${esc(r.period || "")}</small></h2>${body}</section>`;
   }).join("");
 }
@@ -147,9 +216,9 @@ async function load(refresh) {
 $("#tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { day = +b.dataset.d; render(); } });
 $("#q").addEventListener("input", render);
 $("#refresh").addEventListener("click", () => load(true));
-$("#list").addEventListener("click", e => {
-  const li = e.target.closest("li[data-pick]"); if (!li) return;
-  const p = JSON.parse(li.dataset.pick), cur = JSON.parse(localStorage.getItem(pickKey()) || "null");
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-pick]"); if (!el) return;
+  const p = JSON.parse(el.dataset.pick), cur = JSON.parse(localStorage.getItem(pickKey()) || "null");
   if (cur?.id === p.id) localStorage.removeItem(pickKey()); else localStorage.setItem(pickKey(), JSON.stringify(p));
   render();
 });
