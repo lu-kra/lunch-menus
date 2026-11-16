@@ -183,6 +183,7 @@ def generate(models, parts):
                 errors.append(f"{model}: HTTP {e.code} {msg}")
             except Exception as e:
                 errors.append(f"{model}: {type(e).__name__}: {e}"[:200])
+            log(f"AI fallback: {errors[-1]}")
             break
     raise RuntimeError(" | ".join(errors) or "no model available")
 
@@ -273,12 +274,14 @@ def enrich(data, get_image, cache):
             models.extend(pick_models())
             log(f"AI models: {', '.join(models)}")
         status["calls"] += 1
+        started = time.time()
         try:
             result, model = generate(models, parts)
         except Exception as e:
             status["errors"].append(f"{what}: {e}"[:300])
             log(f"AI {what} failed: {e}")
             return False
+        log(f"AI {what}: {model}, {time.time() - started:.0f} s")
         if model not in status["models"]:
             status["models"].append(model)
         return result
