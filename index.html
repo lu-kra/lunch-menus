@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obedové menu</title>
+<style>
+  :root { --bg:#f5f3ef; --card:#fff; --ink:#222; --muted:#777; --accent:#d9480f; --line:#eee; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { position:sticky; top:0; z-index:5; background:var(--card); border-bottom:1px solid var(--line); padding:12px 20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  h1 { font-size:20px; margin:0 12px 0 0; }
+  .tabs { display:flex; gap:4px; }
+  .tabs button { border:1px solid var(--line); background:#fafafa; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .tabs button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tabs button.today:not(.active) { border-color:var(--accent); }
+  input[type=search] { padding:7px 10px; border:1px solid #ddd; border-radius:8px; min-width:200px; font-size:14px; }
+  .spacer { flex:1; }
+  .meta { font-size:12px; color:var(--muted); }
+  #refresh { border:1px solid #ddd; background:#fff; border-radius:8px; padding:6px 10px; cursor:pointer; }
+  #pick { margin:12px 20px 0; padding:10px 14px; background:#fff4e6; border:1px solid #ffd8a8; border-radius:10px; font-size:14px; display:none; }
+  main { display:grid; grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); gap:16px; padding:16px 20px 40px; align-items:start; }
+  .card { background:var(--card); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; }
+  .card h2 { margin:0; padding:12px 16px; font-size:17px; display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--line); }
+  .card h2 a { color:inherit; text-decoration:none; }
+  .card h2 small { font-weight:normal; font-size:12px; color:var(--muted); }
+  .warn, .err, .empty { margin:10px 16px; padding:8px 10px; border-radius:8px; font-size:13px; }
+  .warn { background:#fff9db; color:#8a6d00; }
+  .err { background:#ffe3e3; color:#c92a2a; }
+  .empty { color:var(--muted); }
+  ul { list-style:none; margin:0; padding:4px 0; }
+  li { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; padding:8px 16px; border-bottom:1px solid #f6f6f6; cursor:pointer; }
+  li:hover { background:#fafafa; }
+  li.picked { background:#fff4e6; }
+  li .cat { font-size:11px; color:var(--muted); text-transform:uppercase; white-space:nowrap; padding-top:3px; min-width:62px; }
+  li .name { font-size:14px; line-height:1.35; }
+  li .sub { display:block; font-size:12px; color:var(--muted); margin-top:2px; }
+  li .price { font-weight:600; white-space:nowrap; font-size:14px; }
+  li.soup .name { font-style:italic; }
+  li.perm { opacity:.75; }
+  mark { background:#ffe066; padding:0 1px; }
+  .imgs { padding:10px; }
+  .imgs img { width:100%; border-radius:8px; display:block; cursor:zoom-in; }
+  .imgs .hint { font-size:12px; color:var(--muted); margin:4px 2px 8px; }
+  #loading { padding:40px; text-align:center; color:var(--muted); grid-column:1/-1; }
+  @media (max-width:600px) { main { grid-template-columns:1fr; padding:10px; } header { padding:10px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍽️ Obedové menu</h1>
+  <div class="tabs" id="tabs"></div>
+  <input type="search" id="q" placeholder="Hľadať jedlo… (napr. rezeň, kurac)">
+  <span class="spacer"></span>
+  <span class="meta" id="meta"></span>
+  <button id="refresh" title="Znovu načítať z webov">⟳ Obnoviť</button>
+</header>
+<div id="pick"></div>
+<main id="list"><div id="loading">Načítavam menu…</div></main>
+
+<script>
+const DAY_NAMES = ["Pondelok","Utorok","Streda","Štvrtok","Piatok","Sobota","Nedeľa"];
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const todayIdx = (new Date().getDay() + 6) % 7;
+let data = null;
+let day = todayIdx > 4 ? 4 : todayIdx;
+
+function dateOfWeekday(i) {
+  const d = new Date(); d.setDate(d.getDate() - todayIdx + i);
+  return `${d.getDate()}.${d.getMonth() + 1}.`;
+}
+const pickKey = () => "pick:" + dateOfWeekday(day);
+
+function highlight(text, q) {
+  if (!q) return esc(text);
+  const n = norm(text); let out = "", i = 0, at;
+  while ((at = n.indexOf(q, i)) !== -1) { out += esc(text.slice(i, at)) + "<mark>" + esc(text.slice(at, at + q.length)) + "</mark>"; i = at + q.length; }
+  return out + esc(text.slice(i));
+}
+
+function renderTabs() {
+  const days = new Set([0,1,2,3,4]);
+  data?.restaurants.forEach(r => Object.keys(r.days).forEach(k => days.add(+k)));
+  $("#tabs").innerHTML = [...days].sort().map(i =>
+    `<button data-d="${i}" class="${i === day ? "active" : ""} ${i === todayIdx ? "today" : ""}">${DAY_NAMES[i].slice(0,2)} <small>${dateOfWeekday(i)}</small></button>`).join("");
+}
+
+function imgBlock(imgs, hint) {
+  return `<div class="imgs">${hint ? `<div class="hint">${esc(hint)}</div>` : ""}${imgs.map(im =>
+    `<a href="${esc(im.full)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(im.src)}" alt="menu"></a>`).join("")}</div>`;
+}
+
+function render() {
+  if (!data) return;
+  renderTabs();
+  const q = norm($("#q").value.trim());
+  const pick = JSON.parse(localStorage.getItem(pickKey()) || "null");
+  $("#pick").style.display = pick ? "block" : "none";
+  if (pick) $("#pick").innerHTML = `⭐ Tvoj výber na ${DAY_NAMES[day].toLowerCase()}: <b>${esc(pick.name)}</b> — ${esc(pick.restaurant)} ${pick.price ? "· " + esc(pick.price) : ""}`;
+
+  $("#list").innerHTML = data.restaurants.map(r => {
+    const d = r.days[day];
+    const expected = dateOfWeekday(day);
+    let body = "";
+    if (r.error) body += `<div class="err">Nepodarilo sa načítať: ${esc(r.error)}</div>`;
+    if (d && d.date && d.date !== expected) body += `<div class="warn">⚠ Menu je pre ${esc(d.date)} (nie ${expected}) – reštaurácia ho asi ešte neaktualizovala.</div>`;
+    let items = d?.items || [];
+    if (q) items = items.filter(it => norm(it.name + " " + it.note).includes(q));
+    if (items.length) {
+      body += `<ul>${items.map(it => {
+        const id = r.id + "|" + it.category + "|" + it.name;
+        const cls = [it.category === "Polievka" ? "soup" : "", it.category.startsWith("Stála") ? "perm" : "", pick?.id === id ? "picked" : ""].join(" ");
+        const sub = [it.note, it.allergens ? "alergény: " + it.allergens : ""].filter(Boolean).join(" · ");
+        return `<li class="${cls}" data-pick='${esc(JSON.stringify({id, name: it.name, price: it.price, restaurant: r.name}))}' title="Klikni pre výber">
+          <span class="cat">${esc(it.category.replace("Stála ponuka · ", "★ "))}</span>
+          <span class="name">${highlight(it.name, q)}${sub ? `<span class="sub">${highlight(sub, q)}</span>` : ""}</span>
+          <span class="price">${esc(it.price)}</span></li>`;
+      }).join("")}</ul>`;
+    } else if (d?.items?.length && q) {
+      body += `<div class="empty">Nič nezodpovedá „${esc($("#q").value)}“.</div>`;
+    }
+    if (d?.images?.length) body += imgBlock(d.images, "Menu je zverejnené ako obrázok – klikni pre zväčšenie.");
+    if (r.weekImages?.length) body += imgBlock(r.weekImages, "Týždenné menu (obrázok) – klikni pre zväčšenie.");
+    if (!body && !r.error) body = `<div class="empty">Na tento deň nie je zverejnené menu.</div>`;
+    return `<section class="card"><h2><a href="${esc(r.url)}" target="_blank">${esc(r.name)} ↗</a><small>${esc(r.period || "")}</small></h2>${body}</section>`;
+  }).join("");
+}
+
+async function load(refresh) {
+  $("#meta").textContent = "Načítavam…";
+  try {
+    const res = await fetch("menus.json" + (refresh ? "?refresh=1" : `?t=${Date.now()}`), {cache: "no-store"});
+    data = await res.json();
+    $("#refresh").style.display = data.static ? "none" : "";
+    const f = new Date(data.fetchedAt);
+    $("#meta").textContent = "Aktualizované " + (f.toDateString() === new Date().toDateString() ? "" : f.toLocaleDateString("sk-SK") + " ")
+      + f.toLocaleTimeString("sk-SK", {hour: "2-digit", minute: "2-digit"});
+    render();
+  } catch (e) {
+    $("#meta").textContent = "";
+    $("#list").innerHTML = `<div class="err">Chyba pri načítaní: ${esc(e.message)}</div>`;
+  }
+}
+
+$("#tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { day = +b.dataset.d; render(); } });
+$("#q").addEventListener("input", render);
+$("#refresh").addEventListener("click", () => load(true));
+$("#list").addEventListener("click", e => {
+  const li = e.target.closest("li[data-pick]"); if (!li) return;
+  const p = JSON.parse(li.dataset.pick), cur = JSON.parse(localStorage.getItem(pickKey()) || "null");
+  if (cur?.id === p.id) localStorage.removeItem(pickKey()); else localStorage.setItem(pickKey(), JSON.stringify(p));
+  render();
+});
+load(false);
+</script>
+</body>
+</html>
