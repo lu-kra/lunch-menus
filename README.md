@@ -8,7 +8,6 @@ One page with this week's lunch menus from:
 - [Liptov 1713](https://www.liptov1713.sk/) – parsed into dishes
 - [Maytex](https://www.maytex.sk/) – weekly menu image (read into dishes by AI)
 - [Hotel Klar](https://klar.sk/denne-menu/) – weekly menu image (read into dishes by AI)
-- [Posedenie u Kapra](https://restauracie.sme.sk/restauracia/posedenie-u-kapra_12152-liptovsky-mikulas_2866/denne-menu) – daily menu from SME, shown last
 
 ## Run
 
@@ -26,8 +25,6 @@ Python 3 only, no dependencies. The server scrapes the sites (cached for 20 minu
 - Click a dish to mark it as your pick for that day (saved in the browser).
 - A yellow warning appears when a restaurant hasn't published the current week's menu yet.
 - **💪 AI tip pre fitness** – the healthiest dish of each restaurant for a gym-goer (see below).
-- SME may block automated requests. In that case Posedenie u Kapra still appears with an explicit
-  loading error and a link to the original menu; no dishes or AI estimates are invented.
 
 ## Hosting (GitHub Pages)
 

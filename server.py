@@ -15,7 +15,6 @@ import shutil
 import sys
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -190,64 +189,6 @@ def parse_klar(html):
     return {"days": {}, "weekImages": shown, "period": period.group(1) if period else ""}
 
 
-# ---------------------------------------------------------------- SME restaurant menus
-def parse_sme(html):
-    sections = re.split(
-        r"""<div\b[^>]*class=["'][^"']*\b(?:dnesne_menu|ostatne_menu)\b[^"']*["'][^>]*>""",
-        html, flags=S)[1:]
-    days = {}
-    for section in sections:
-        heading = re.search(r"<h2\b[^>]*>(.*?)</h2>", section, S)
-        date = re.search(r"(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})",
-                         text(heading.group(1))) if heading else None
-        if not date:
-            continue
-        day = dt.date(int(date.group(3)), int(date.group(2)), int(date.group(1)))
-        rows = re.split(
-            r"""<div\b[^>]*class=["'][^"']*\bjedlo_polozka\b[^"']*["'][^>]*>""",
-            section, flags=S)[1:]
-        items, permanent = [], False
-        for row in rows:
-            desc = re.search(r"""<div\b[^>]*class=["'][^"']*\bleft\b[^"']*["'][^>]*>(.*?)</div>""",
-                             row, S)
-            if not desc:
-                continue
-            name = " ".join(text(desc.group(1)).split())
-            if re.match(r"stála ponuka", name, re.I):
-                permanent = True
-                continue
-            if not name:
-                continue
-            price = re.search(
-                r"""<span\b[^>]*class=["'][^"']*\bright\b[^"']*["'][^>]*>(.*?)</span>""",
-                row, S)
-            soup = re.match(r"polievka\s*:?\s*", name, re.I)
-            number = re.match(r"(\d+)\s*[:.)]\s*", name)
-            if soup:
-                category, name = "Polievka", name[soup.end():]
-            elif re.match(r"0[,.]\d+\s*l\b", name, re.I):
-                category = "Polievka"
-            elif number:
-                category, name = f"Menu {number.group(1)}", name[number.end():]
-            else:
-                category = "Menu"
-            if permanent and category != "Polievka":
-                category = "Stála ponuka · " + category
-            allergens = re.search(
-                r"\s+(?:A(?:lergény)?\s*[:/]\s*)?\(?((?:1[0-4]|[1-9])"
-                r"(?:\s*,\s*(?:1[0-4]|[1-9]))*)\)?\s*$", name, re.I)
-            if allergens:
-                name = name[:allergens.start()]
-            if name.strip():
-                items.append(item(category, name.strip(),
-                                  " ".join(text(price.group(1)).split()) if price else "",
-                                  re.sub(r"\s+", "", allergens.group(1)) if allergens else ""))
-        days[day.weekday()] = {"date": f"{day.day}.{day.month}.", "items": items}
-    if not any(d["items"] for d in days.values()):
-        raise ValueError("Na SME sa nepodarilo nájsť zverejnené denné menu.")
-    return {"days": days}
-
-
 RESTAURANTS = [
     {"id": "r66", "name": "Route 66", "url": "https://restauracia.r66.sk/sk/menu/denne-menu#mmenu",
      "fetch": "https://restauracia.r66.sk/sk/menu/denne-menu", "parse": parse_r66},
@@ -257,10 +198,6 @@ RESTAURANTS = [
      "fetch": "https://www.maytex.sk/", "parse": parse_maytex},
     {"id": "klar", "name": "Hotel Klar", "url": "https://klar.sk/denne-menu/",
      "fetch": "https://klar.sk/denne-menu/", "parse": parse_klar},
-    {"id": "ukapra", "name": "Posedenie u Kapra",
-     "url": "https://restauracie.sme.sk/restauracia/posedenie-u-kapra_12152-liptovsky-mikulas_2866/denne-menu",
-     "fetch": "https://restauracie.sme.sk/restauracia/posedenie-u-kapra_12152-liptovsky-mikulas_2866/denne-menu",
-     "parse": parse_sme},
 ]
 IMAGE_HOSTS = {"www.maytex.sk", "maytex.sk", "klar.sk", "www.klar.sk"}
 
@@ -283,11 +220,7 @@ def scrape_one(r):
     try:
         out.update(r["parse"](fetch(r["fetch"])))
     except Exception as e:  # one broken site must not break the others
-        if isinstance(e, urllib.error.HTTPError) and e.code == 403:
-            out["error"] = ("Zdroj odmietol automatické načítanie (HTTP 403). "
-                            "Originálne menu otvoríš kliknutím na názov reštaurácie.")
-        else:
-            out["error"] = f"{type(e).__name__}: {e}"
+        out["error"] = f"{type(e).__name__}: {e}"
     return out
 
 
