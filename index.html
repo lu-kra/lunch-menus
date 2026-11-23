@@ -19,6 +19,12 @@
   .meta { font-size:12px; color:var(--muted); }
   #refresh { border:1px solid #ddd; background:#fff; border-radius:8px; padding:6px 10px; cursor:pointer; }
   #pick { margin:12px 20px 0; padding:10px 14px; background:#fff4e6; border:1px solid #ffd8a8; border-radius:10px; font-size:14px; display:none; }
+  #week-plan { margin:12px 20px 0; padding:12px 14px; background:#fff; border:1px solid #ddd; border-radius:12px; }
+  #week-plan h2 { margin:0 0 8px; font-size:16px; }
+  #week-plan .plan-day { display:grid; grid-template-columns:125px 1fr auto; gap:8px; align-items:center; padding:6px 2px; border-top:1px solid #f1f3f5; font-size:13px; }
+  #week-plan .plan-day > button:first-child { border:0; background:none; padding:4px 0; text-align:left; font:inherit; cursor:pointer; }
+  #week-plan .plan-day .none { color:var(--muted); }
+  #week-plan .remove { border:1px solid #ddd; border-radius:6px; background:#fff; cursor:pointer; padding:3px 7px; }
   main { display:grid; grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); gap:16px; padding:16px 20px 40px; align-items:start; }
   .card { background:var(--card); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; }
   .card h2 { margin:0; padding:12px 16px; font-size:17px; display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--line); }
@@ -73,6 +79,7 @@
   <button id="refresh" title="Znovu načítať z webov">⟳ Obnoviť</button>
 </header>
 <div id="pick"></div>
+<section id="week-plan" aria-label="Týždenný plán obedov"></section>
 <div id="ai"></div>
 <main id="list"><div id="loading">Načítavam menu…</div></main>
 
@@ -86,10 +93,30 @@ let data = null;
 let day = todayIdx > 4 ? 4 : todayIdx;
 
 function dateOfWeekday(i) {
-  const d = new Date(); d.setDate(d.getDate() - todayIdx + i);
+  const d = dateForWeekday(i);
   return `${d.getDate()}.${d.getMonth() + 1}.`;
 }
-const pickKey = () => "pick:" + dateOfWeekday(day);
+function dateForWeekday(i) {
+  const d = new Date(); d.setDate(d.getDate() - todayIdx + i);
+  return d;
+}
+const isoDateOfWeekday = i => {
+  const d = dateForWeekday(i);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const pickKey = i => "pick:" + isoDateOfWeekday(i);
+const storedPick = i => JSON.parse(localStorage.getItem(pickKey(i)) || "null");
+
+function migrateLegacyPicks() {
+  for (let i = 0; i < 5; i++) {
+    const legacyKey = "pick:" + dateOfWeekday(i);
+    const legacy = localStorage.getItem(legacyKey);
+    if (legacy && !localStorage.getItem(pickKey(i))) {
+      localStorage.setItem(pickKey(i), legacy);
+      localStorage.removeItem(legacyKey);
+    }
+  }
+}
 
 function highlight(text, q) {
   if (!q) return esc(text);
@@ -103,6 +130,16 @@ function renderTabs() {
   data?.restaurants.forEach(r => Object.keys(r.days).forEach(k => days.add(+k)));
   $("#tabs").innerHTML = [...days].sort().map(i =>
     `<button data-d="${i}" class="${i === day ? "active" : ""} ${i === todayIdx ? "today" : ""}">${DAY_NAMES[i].slice(0,2)} <small>${dateOfWeekday(i)}</small></button>`).join("");
+}
+
+function renderWeekPlan() {
+  $("#week-plan").innerHTML = `<h2>📅 Plán na týždeň</h2>` + [0,1,2,3,4].map(i => {
+    const pick = storedPick(i);
+    const meal = pick
+      ? `<b>${esc(pick.name)}</b> — ${esc(pick.restaurant)}${pick.price ? " · " + esc(pick.price) : ""}`
+      : `<span class="none">Nevybraté</span>`;
+    return `<div class="plan-day"><button data-plan-day="${i}">${DAY_NAMES[i]} <small>${dateOfWeekday(i)}</small></button><span>${meal}</span>${pick ? `<button class="remove" data-remove-day="${i}" title="Odstrániť výber">Odstrániť</button>` : ""}</div>`;
+  }).join("");
 }
 
 function imgBlock(imgs, hint) {
@@ -155,9 +192,11 @@ function renderAi(best, pick) {
 
 function render() {
   if (!data) return;
+  migrateLegacyPicks();
   renderTabs();
   const q = norm($("#q").value.trim());
-  const pick = JSON.parse(localStorage.getItem(pickKey()) || "null");
+  const pick = storedPick(day);
+  renderWeekPlan();
   $("#pick").style.display = pick ? "block" : "none";
   if (pick) $("#pick").innerHTML = `⭐ Tvoj výber na ${DAY_NAMES[day].toLowerCase()}: <b>${esc(pick.name)}</b> — ${esc(pick.restaurant)} ${pick.price ? "· " + esc(pick.price) : ""}`;
   const best = new Map(data.restaurants.map(r => [r.id, bestOf(r.days[day]?.items)]));
@@ -217,9 +256,17 @@ $("#tabs").addEventListener("click", e => { const b = e.target.closest("button")
 $("#q").addEventListener("input", render);
 $("#refresh").addEventListener("click", () => load(true));
 document.addEventListener("click", e => {
+  const remove = e.target.closest("[data-remove-day]");
+  if (remove) {
+    localStorage.removeItem(pickKey(+remove.dataset.removeDay));
+    render();
+    return;
+  }
+  const planDay = e.target.closest("[data-plan-day]");
+  if (planDay) { day = +planDay.dataset.planDay; render(); return; }
   const el = e.target.closest("[data-pick]"); if (!el) return;
-  const p = JSON.parse(el.dataset.pick), cur = JSON.parse(localStorage.getItem(pickKey()) || "null");
-  if (cur?.id === p.id) localStorage.removeItem(pickKey()); else localStorage.setItem(pickKey(), JSON.stringify(p));
+  const p = JSON.parse(el.dataset.pick), cur = storedPick(day);
+  if (cur?.id === p.id) localStorage.removeItem(pickKey(day)); else localStorage.setItem(pickKey(day), JSON.stringify(p));
   render();
 });
 load(false);
