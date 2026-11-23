@@ -189,6 +189,55 @@ def parse_klar(html):
     return {"days": {}, "weekImages": shown, "period": period.group(1) if period else ""}
 
 
+def parse_wordpress_menu_image(html, base_url):
+    """Find the primary image in a restaurant's main content, not site chrome or promos."""
+    main = re.search(r"<main\b[^>]*>(.*?)</main\s*>", html, S)
+    if main:
+        content = main.group(1)
+    else:
+        body = re.search(r"<body\b[^>]*>(.*)", html, S)
+        content = body.group(1) if body else html
+        footer = re.search(r"<footer\b", content, S)
+        if footer:
+            content = content[:footer.start()]
+        content = re.sub(r"<header\b[^>]*>.*?</header\s*>", "", content, flags=S)
+    candidates = []
+    for tag in re.findall(r"<img\b[^>]*>", content, S):
+        classes = re.search(r'\bclass=["\']([^"\']*)', tag, S)
+        if classes and re.search(r"\b(?:custom-logo|site-logo|logo)\b", classes.group(1), re.I):
+            continue
+        src = re.search(r'\bsrc=["\']([^"\']+)', tag, S)
+        if not src:
+            continue
+        if "logo" in urllib.parse.urlparse(src.group(1)).path.lower():
+            continue
+        srcset = re.search(r'\bsrcset=["\']([^"\']+)', tag, S)
+        variants = []
+        if srcset:
+            for entry in srcset.group(1).split(","):
+                variant = re.match(r"\s*(\S+)\s+(\d+)w", entry)
+                if variant:
+                    variants.append((int(variant.group(2)),
+                                     urllib.parse.urljoin(base_url, variant.group(1))))
+        shown = [variant for variant in variants if variant[0] <= 1280]
+        display = max(shown, default=(0, urllib.parse.urljoin(base_url, src.group(1))))[1]
+        full = max(variants, default=(0, urllib.parse.urljoin(base_url, src.group(1))))[1]
+        candidates.append({"src": display, "full": full})
+    if not candidates:
+        raise ValueError("menu image not found in page content")
+    # Restaurant pages use a single image in their main content; choosing its first
+    # non-logo image avoids unrelated modal promotions appended elsewhere on the page.
+    return {"days": {}, "weekImages": [candidates[0]]}
+
+
+def parse_yuza(html):
+    return parse_wordpress_menu_image(html, "https://yuza.sk/denne-menu/")
+
+
+def parse_flow(html):
+    return parse_wordpress_menu_image(html, "https://www.flw.sk/obedove-menu/")
+
+
 RESTAURANTS = [
     {"id": "r66", "name": "Route 66", "url": "https://restauracia.r66.sk/sk/menu/denne-menu#mmenu",
      "fetch": "https://restauracia.r66.sk/sk/menu/denne-menu", "parse": parse_r66},
@@ -198,8 +247,13 @@ RESTAURANTS = [
      "fetch": "https://www.maytex.sk/", "parse": parse_maytex},
     {"id": "klar", "name": "Hotel Klar", "url": "https://klar.sk/denne-menu/",
      "fetch": "https://klar.sk/denne-menu/", "parse": parse_klar},
+    {"id": "yuza", "name": "YUZA", "url": "https://yuza.sk/denne-menu/",
+     "fetch": "https://yuza.sk/denne-menu/", "parse": parse_yuza},
+    {"id": "flow", "name": "FLOW", "url": "https://www.flw.sk/obedove-menu/",
+     "fetch": "https://www.flw.sk/obedove-menu/", "parse": parse_flow},
 ]
-IMAGE_HOSTS = {"www.maytex.sk", "maytex.sk", "klar.sk", "www.klar.sk"}
+IMAGE_HOSTS = {"www.maytex.sk", "maytex.sk", "klar.sk", "www.klar.sk",
+               "yuza.sk", "www.flw.sk"}
 
 _cache = {"time": 0, "data": None}
 _img_cache = {}

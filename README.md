@@ -8,6 +8,8 @@ One page with this week's lunch menus from:
 - [Liptov 1713](https://www.liptov1713.sk/) – parsed into dishes
 - [Maytex](https://www.maytex.sk/) – weekly menu image (read into dishes by AI)
 - [Hotel Klar](https://klar.sk/denne-menu/) – weekly menu image (read into dishes by AI)
+- [YUZA](https://yuza.sk/denne-menu/) – weekly menu image (read into dishes by AI)
+- [FLOW](https://www.flw.sk/obedove-menu/) – weekly menu image (read into dishes by AI)
 
 ## Run
 
@@ -22,7 +24,7 @@ Python 3 only, no dependencies. The server scrapes the sites (cached for 20 minu
 
 - Day tabs Po–Pi (opens on today), search box filters dishes across restaurants (diacritics-insensitive).
 - Liptov 1713's permanent offer is shown alongside the daily menu.
-- Click a dish to mark it as your pick for that day (saved in the browser).
+- Click a dish to mark it as your pick for that day (saved in the browser); the weekly plan summarizes Mon–Fri and remains separate across weeks.
 - A yellow warning appears when a restaurant hasn't published the current week's menu yet.
 - **💪 AI tip pre fitness** – the healthiest dish of each restaurant for a gym-goer (see below).
 
