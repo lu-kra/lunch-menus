@@ -29,8 +29,10 @@ Python 3 only, no dependencies. The server scrapes the sites (cached for 20 minu
 ## Hosting (GitHub Pages)
 
 `python3 server.py --build _site` writes a static site (`index.html`, `menus.json`, `ai.json`, `img/`).
-The workflow `.github/workflows/pages.yml` runs it on every push, on demand and every 30 minutes on
-weekdays 6:00–14:30 and deploys it to GitHub Pages.
+The workflow `.github/workflows/pages.yml` deploys it on every push to `main`, on demand, and daily
+at 05:17, 08:17, 10:17, 14:17 and 17:17 UTC, including weekends. In Slovakia these times are
+06:17, 09:17, 11:17, 15:17 and 18:17 in winter, or one hour later in summer. GitHub may delay
+scheduled runs. An overlapping run does not cancel a deployment already in progress.
 
 ## AI fitness tips (Google Gemini, free tier)
 

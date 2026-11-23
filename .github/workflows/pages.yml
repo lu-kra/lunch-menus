@@ -5,8 +5,8 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Every 30 min on weekdays, 05:00–12:30 UTC (≈ 6:00–14:30 Slovak time, winter & summer)
-    - cron: "*/30 5-12 * * 1-5"
+    # Daily at 05:17, 08:17, 10:17, 14:17 and 17:17 UTC.
+    - cron: "17 5,8,10,14,17 * * *"
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
