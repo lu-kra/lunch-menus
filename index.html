@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Obedové menu</title>
 <style>
-  :root { --bg:#f5f3ef; --card:#fff; --ink:#222; --muted:#777; --accent:#d9480f; --line:#eee; }
+  :root { --bg:#f4f2ee; --card:#fff; --ink:#222; --muted:#777; --accent:#d9480f; --line:#e9e6e1; }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
-  header { position:sticky; top:0; z-index:5; background:var(--card); border-bottom:1px solid var(--line); padding:12px 20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  header { position:sticky; top:0; z-index:5; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); box-shadow:0 2px 12px rgba(34,24,16,.06); padding:12px 20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; backdrop-filter:blur(12px); }
   h1 { font-size:20px; margin:0 12px 0 0; }
   .tabs { display:flex; gap:4px; }
-  .tabs button { border:1px solid var(--line); background:#fafafa; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .tabs button { border:1px solid var(--line); background:#faf9f7; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:14px; transition:background .15s, color .15s, border-color .15s; }
   .tabs button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
   .tabs button.today:not(.active) { border-color:var(--accent); }
   input[type=search] { padding:7px 10px; border:1px solid #ddd; border-radius:8px; min-width:200px; font-size:14px; }
@@ -20,15 +20,22 @@
   #refresh { border:1px solid #ddd; background:#fff; border-radius:8px; padding:6px 10px; cursor:pointer; }
   #pick { margin:12px 20px 0; padding:10px 14px; background:#fff4e6; border:1px solid #ffd8a8; border-radius:10px; font-size:14px; display:none; }
   #pick, #week-plan, #ai { width:fit-content; max-width:min(calc(100% - 40px), 640px); }
-  #week-plan { margin:12px 20px 0; padding:12px 14px; background:#fff; border:1px solid #ddd; border-radius:12px; }
+  #week-plan { margin:12px 20px 0; padding:12px 14px; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 2px 8px rgba(34,24,16,.04); }
   #week-plan h2 { margin:0 0 8px; font-size:16px; }
   #week-plan .plan-day { display:grid; grid-template-columns:125px 1fr auto; gap:8px; align-items:center; padding:6px 2px; border-top:1px solid #f1f3f5; font-size:13px; }
   #week-plan .plan-day > button:first-child { border:0; background:none; padding:4px 0; text-align:left; font:inherit; cursor:pointer; }
   #week-plan .plan-day .none { color:var(--muted); }
   #week-plan .remove { border:1px solid #ddd; border-radius:6px; background:#fff; cursor:pointer; padding:3px 7px; }
-  main { display:flex; flex-wrap:wrap; gap:16px; padding:16px 20px 40px; align-items:flex-start; }
-  .card { width:fit-content; max-width:min(100%, 560px); background:var(--card); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; }
-  .card h2 { margin:0; padding:12px 16px; font-size:17px; display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--line); }
+  .restaurants-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:22px 20px 0; }
+  .restaurants-toolbar h2 { margin:0; font-size:18px; }
+  .rail-controls { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; }
+  .rail-controls button { width:32px; height:32px; border:1px solid #ddd7cf; border-radius:50%; background:#fff; color:var(--ink); font-size:18px; line-height:1; cursor:pointer; }
+  .rail-controls button:hover { background:#fff4e6; border-color:#ffd8a8; }
+  main { display:flex; flex-wrap:nowrap; gap:16px; padding:12px 20px 24px; align-items:flex-start; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x proximity; scrollbar-color:#c8c0b5 transparent; scrollbar-width:thin; }
+  main::-webkit-scrollbar { height:10px; }
+  main::-webkit-scrollbar-thumb { background:#c8c0b5; border:3px solid var(--bg); border-radius:8px; }
+  .card { flex:0 0 fit-content; width:fit-content; min-width:min(380px, calc(100vw - 40px)); max-width:min(560px, calc(100vw - 40px)); scroll-snap-align:start; background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 3px 12px rgba(34,24,16,.06); overflow:hidden; }
+  .card h2 { margin:0; padding:12px 16px; font-size:17px; display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#fff,#fdfcfb); }
   .card h2 a { color:inherit; text-decoration:none; }
   .card h2 small { font-weight:normal; font-size:12px; color:var(--muted); }
   .warn, .err, .empty { margin:10px 16px; padding:8px 10px; border-radius:8px; font-size:13px; }
@@ -50,7 +57,7 @@
   .imgs img { width:100%; border-radius:8px; display:block; cursor:zoom-in; }
   .imgs .hint { font-size:12px; color:var(--muted); margin:4px 2px 8px; }
   #loading { padding:40px; text-align:center; color:var(--muted); grid-column:1/-1; }
-  #ai { margin:12px 20px 0; padding:10px 14px 8px; background:#fff; border:1px solid #b2f2bb; border-radius:12px; display:none; }
+  #ai { margin:12px 20px 0; padding:10px 14px 8px; background:#fff; border:1px solid #b2f2bb; border-radius:12px; box-shadow:0 2px 8px rgba(34,24,16,.04); display:none; }
   #ai h3 { margin:0 0 4px; font-size:15px; }
   #ai .row { display:grid; grid-template-columns:24px 1fr auto; gap:0 8px; align-items:start; padding:7px 4px; border-top:1px solid #f1f3f5; cursor:pointer; font-size:14px; }
   #ai .row:hover { background:#f8f9fa; }
@@ -82,6 +89,7 @@
 <div id="pick"></div>
 <section id="week-plan" aria-label="Týždenný plán obedov"></section>
 <div id="ai"></div>
+<div class="restaurants-toolbar"><h2>Menu reštaurácií</h2><div class="rail-controls"><span>Posuňte pre ďalšie</span><button id="scroll-left" aria-label="Posunúť reštaurácie doľava">‹</button><button id="scroll-right" aria-label="Posunúť reštaurácie doprava">›</button></div></div>
 <main id="list"><div id="loading">Načítavam menu…</div></main>
 
 <script>
@@ -256,6 +264,8 @@ async function load(refresh) {
 $("#tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { day = +b.dataset.d; render(); } });
 $("#q").addEventListener("input", render);
 $("#refresh").addEventListener("click", () => load(true));
+$("#scroll-left").addEventListener("click", () => $("#list").scrollBy({left: -420, behavior: "smooth"}));
+$("#scroll-right").addEventListener("click", () => $("#list").scrollBy({left: 420, behavior: "smooth"}));
 document.addEventListener("click", e => {
   const remove = e.target.closest("[data-remove-day]");
   if (remove) {
